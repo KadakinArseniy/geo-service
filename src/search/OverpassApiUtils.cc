@@ -35,6 +35,66 @@ constexpr const char* sz_requestByCoordinatesFormat =
 namespace geo::overpass
 {
 
+GeoProtoTaggedFeatures ExtractCityDetails(const std::string& json)
+{
+   if (json.empty())
+      return {};
+
+   rapidjson::Document document;
+   document.Parse(json.c_str());
+   if (!document.IsObject() || !document.HasMember("elements"))
+      return {};
+
+   GeoProtoTaggedFeatures features;
+   for (const auto& element : document["elements"].GetArray())
+   {
+
+      if (json::GetString(json::Get(element, "type")) != "node")
+         continue;
+
+      // Check if it has tourism tag with value hotel or museum
+      const auto& tags = json::Get(element, "tags");
+      if (!tags.IsObject() || !tags.HasMember("tourism"))
+         continue;
+
+      const std::string_view tourismValue = json::GetString(json::Get(tags, "tourism"));
+      if (tourismValue != "hotel" && tourismValue != "museum")
+         continue;
+
+      // Create TaggedFeature
+      GeoProtoTaggedFeature feature;
+
+      // Set position
+      const double lat = json::GetDouble(json::Get(element, "lat"));
+      const double lon = json::GetDouble(json::Get(element, "lon"));
+      feature.mutable_position()->set_latitude(lat);
+      feature.mutable_position()->set_longitude(lon);
+
+      // Set tourism tag
+      (*feature.mutable_tags())["tourism"] = std::string(tourismValue);
+
+      // Set name tag if available
+      if (tags.HasMember("name"))
+      {
+         const std::string_view name = json::GetString(json::Get(tags, "name"));
+         if (!name.empty())
+            (*feature.mutable_tags())["name"] = std::string(name);
+      }
+
+      // Set name:en tag if available
+      if (tags.HasMember("name:en"))
+      {
+         const std::string_view nameEn = json::GetString(json::Get(tags, "name:en"));
+         if (!nameEn.empty())
+            (*feature.mutable_tags())["name:en"] = std::string(nameEn);
+      }
+
+      features.emplace_back(std::move(feature));
+   }
+
+   return features;
+}
+
 OsmIds ExtractRelationIds(const std::string& json)
 {
    if (json.empty())
